@@ -1,0 +1,24 @@
+version: "3.8"
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: saas_admin
+      POSTGRES_PASSWORD: local_password
+      POSTGRES_DB: saas_core
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.0
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8081:8080" # Running on 8081 so it doesn't conflict with Fastify on 8080
+    command: start-dev
+
+volumes:
+  pgdata:
