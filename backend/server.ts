@@ -1,22 +1,23 @@
-import Fastify from "fastify";
-import cors from "@fastify/cors";
-import { Pool } from "pg";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { securityLogs } from "./schema.js";
-import jwt from "jsonwebtoken";
-import jwksClient from "jwks-rsa";
-import "dotenv/config";
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { securityLogs } from './schema.js';
+import jwt from 'jsonwebtoken';
+import jwksClient from 'jwks-rsa';
+import 'dotenv/config';
 
 const app = Fastify({ logger: true });
-app.register(cors, { origin: "*" });
+const allowedOrigins = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',') : '*';
+app.register(cors, { origin: allowedOrigins });
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const db = drizzle(pool);
 
 // Setup JWKS Client to fetch public keys from Keycloak dynamically
+const keycloakUrl = process.env.KEYCLOAK_URL || 'http://localhost:8081';
 const client = jwksClient({
-  jwksUri:
-    "http://localhost:8081/realms/saas-realm/protocol/openid-connect/certs",
+  jwksUri: `${keycloakUrl}/realms/saas-realm/protocol/openid-connect/certs`,
 });
 
 function getKey(header: any, callback: any) {
@@ -27,28 +28,32 @@ function getKey(header: any, callback: any) {
 }
 
 // Global Auth & Multi-Tenancy Middleware
-app.addHook("preHandler", (request, reply, done) => {
+app.addHook('preHandler', (request, reply, done) => {
   const authHeader = request.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return reply.status(401).send({ error: "Missing or Invalid Token" });
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return reply.status(401).send({ error: 'Missing or Invalid Token' });
   }
 
-  const token = authHeader.split(" ")[1];
+  const token = authHeader.split(' ')[1];
   if (!token) {
-    return reply.status(401).send({ error: "Missing Token Payload" });
+    return reply.status(401).send({ error: 'Missing Token Payload' });
   }
 
   // Verify the JWT cryptographically against Keycloak
   jwt.verify(token, getKey, {}, (err, decoded: any) => {
     if (err) {
-      return reply.status(401).send({ error: "Unauthorized Token" });
+      return reply.status(401).send({ error: 'Unauthorized Token' });
     }
 
     // Extract the custom claim we mapped in Keycloak
     const tenantId = decoded.tenant_id;
 
     if (!tenantId) {
-      return reply.status(403).send({ error: "No tenant_id assigned to user" });
+      return reply.status(403).send({ error: 'No tenant_id assigned to user' });
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(tenantId)) {
+      return reply.status(403).send({ error: 'Invalid tenant_id format' });
     }
 
     // Attach to the request so routes can use it safely
@@ -68,7 +73,7 @@ async function withTenant<T>(tenantId: string, callback: () => Promise<T>) {
   }
 }
 
-app.get("/logs", async (request, reply) => {
+app.get('/logs', async (request, reply) => {
   const tenantId = (request as any).tenantId;
   const logs = await withTenant(tenantId, async () => {
     return await db.select().from(securityLogs);
@@ -76,7 +81,7 @@ app.get("/logs", async (request, reply) => {
   return { logs };
 });
 
-app.post("/logs", async (request, reply) => {
+app.post('/logs', async (request, reply) => {
   const tenantId = (request as any).tenantId;
   const { event, ipAddress } = request.body as any;
 

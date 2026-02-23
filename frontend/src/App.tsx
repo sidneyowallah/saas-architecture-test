@@ -2,8 +2,9 @@ import { useState, useEffect, type FormEvent } from 'react';
 import Keycloak from 'keycloak-js';
 
 // Initialize Keycloak (Points to your local Docker container)
+const keycloakUrl = import.meta.env.VITE_KEYCLOAK_URL || 'http://localhost:8081';
 const keycloak = new Keycloak({
-  url: 'http://localhost:8081',
+  url: keycloakUrl,
   realm: 'saas-realm',
   clientId: 'saas-frontend',
 });
@@ -27,7 +28,8 @@ function App() {
 
   const fetchLogs = async () => {
     try {
-      const res = await fetch('http://localhost:8080/logs', {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+      const res = await fetch(`${apiUrl}/logs`, {
         headers: {
           // 2. Send the Keycloak JWT to the Fastify backend
           Authorization: `Bearer ${keycloak.token}`,
@@ -46,7 +48,8 @@ function App() {
 
     setIsSubmitting(true);
     try {
-      await fetch('http://localhost:8080/logs', {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+      await fetch(`${apiUrl}/logs`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,0 +1,155 @@
+name: Full Stack CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+# 1. CONCURRENCY: Cancel older, redundant runs to save EC2 Spot instance costs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# 2. PERMISSIONS: Enforce least privilege for the GitHub token
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 123456789012.dkr.ecr.us-east-1.amazonaws.com # Replace with your AWS Account ID
+  PROD_API_URL: https://api.yourdomain.com # Replace with your actual production backend URL
+
+jobs:
+  # =========================================================
+  # JOB 1: BACKEND CI (Lint, Test, & TypeScript Build)
+  # =========================================================
+  backend-ci:
+    name: Backend CI
+    runs-on: [self-hosted, linux, x64, saas-ci]
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 3. NODE 22: Upgraded to modern LTS standard
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: './backend/package-lock.json'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Enforce Code Formatting (Prettier)
+        run: npx prettier --check "**/*.ts"
+
+      - name: TypeScript Type Check
+        run: npx tsc --noEmit
+
+      - name: Run Unit Tests
+        run: npm run test --if-present
+
+  # =========================================================
+  # JOB 2: FRONTEND CI (Lint, Test, & Vite Build)
+  # =========================================================
+  frontend-ci:
+    name: Frontend CI
+    runs-on: [self-hosted, linux, x64, saas-ci]
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: './frontend/package-lock.json'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Enforce Code Formatting (Prettier)
+        run: npx prettier --check "**/*.{ts,tsx}"
+
+      - name: Build Vite App
+        run: npm run build
+
+  # =========================================================
+  # JOB 3: DEPLOY TO AWS (Migrate DB, Build Images, Update ECS)
+  # =========================================================
+  deploy-to-aws:
+    name: Deploy to Production
+    needs: [backend-ci, frontend-ci]
+    # Only run deployment if the code is merged/pushed to main
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, x64, saas-ci]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: './backend/package-lock.json'
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 4. DATABASE MIGRATIONS: Run safely inside the VPC before deploying new code
+      - name: Run Database Migrations
+        working-directory: ./backend
+        env:
+          # Injected from GitHub Repository Secrets
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          npm ci
+          npm run migrate
+
+      - name: Build and Push Backend Image
+        working-directory: ./backend
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          REPOSITORY=saas-backend
+
+          docker build -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+          # Tag as latest for easy reference
+          docker tag $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$REPOSITORY:latest
+          docker push $ECR_REGISTRY/$REPOSITORY:latest
+
+      # 5. FRONTEND BUILD ENV: Inject the production API URL during Docker build
+      - name: Build and Push Frontend Image
+        working-directory: ./frontend
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          REPOSITORY=saas-frontend
+
+          docker build \
+            --build-arg VITE_API_URL=${{ env.PROD_API_URL }} \
+            -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG .
+            
+          docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+      # 6. ZERO-DOWNTIME DEPLOYMENT: Trigger ECS to gracefully replace the containers
+      - name: Force ECS Fargate Update
+        run: |
+          aws ecs update-service --cluster saas-backend-cluster --service fastify-service --force-new-deployment
+          aws ecs update-service --cluster saas-frontend-cluster --service nginx-frontend-service --force-new-deployment

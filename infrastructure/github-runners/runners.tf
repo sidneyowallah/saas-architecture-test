@@ -1,0 +1,71 @@
+module "lambdas_download" {
+  source  = "philips-labs/github-runner/aws//modules/download-lambda"
+  version = "~> 6.1"
+  lambdas = [
+    {
+      name = "webhook"
+      tag  = "v6.1.0"
+    },
+    {
+      name = "runners"
+      tag  = "v6.1.0"
+    },
+    {
+      name = "runner-binaries-syncer"
+      tag  = "v6.1.0"
+    }
+  ]
+}
+
+# 2. The core Github Runner infrastructure
+module "github_runner" {
+  source  = "philips-labs/github-runner/aws"
+  version = "~> 6.1"
+
+  aws_region = var.aws_region
+  vpc_id     = data.aws_vpc.shared.id
+  subnet_ids = data.aws_subnets.private.ids
+
+  prefix = "saas-ci"
+
+  # Load the downloaded lambdas
+  webhook_lambda_zip                = module.lambdas_download.files[0]
+  runners_lambda_zip                = module.lambdas_download.files[1]
+  runner_binaries_syncer_lambda_zip = module.lambdas_download.files[2]
+
+  # GitHub App Configuration
+  github_app = {
+    key_base64     = var.github_app_key_base64
+    id             = var.github_app_id
+    webhook_secret = var.github_webhook_secret
+  }
+
+
+
+  # -------------------------------------------------------------------
+  # EC2 SPOT INSTANCE CONFIGURATION (Cost Savings)
+  # -------------------------------------------------------------------
+  instance_target_capacity_type = "spot"
+  
+  # Provide multiple instance sizes so AWS can find the cheapest available capacity
+  instance_types = ["t3.medium", "t3.large", "m5.large"]
+  
+  # Ubuntu is the most compatible OS for building Vite/Node.js/Docker
+  runner_os = "linux"
+
+  # -------------------------------------------------------------------
+  # EPHEMERAL RUNNER SETTINGS (Clean Environments)
+  # -------------------------------------------------------------------
+  # Force the instance to self-destruct after running exactly 1 GitHub Job
+  enable_ephemeral_runners = true
+
+  # -------------------------------------------------------------------
+  # ROUTING & LABELS
+  # -------------------------------------------------------------------
+  # These are the exact labels we targeted in our CI/CD YAML files!
+  runner_extra_labels = ["ec2-spot", "saas-ci"]
+
+  # Uncomment this line ONLY IF you have never used EC2 Spot Instances in your AWS account before.
+  # AWS requires a one-time Service Linked Role to allow Spot instances to be created.
+  # create_service_linked_role_spot = true 
+}
