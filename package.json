@@ -7,8 +7,14 @@
     "prettier": "^3.8.1"
   },
   "lint-staged": {
-    "**/*.{ts,tsx,js,jsx}": [
-      "eslint --fix",
+    "frontend/**/*.{ts,tsx,js,jsx}": [
+      "cd frontend && npx eslint --fix",
+      "prettier --write"
+    ],
+    "backend/**/*.{ts,tsx,js,jsx}": [
+      "prettier --write"
+    ],
+    "*.{ts,tsx,js,jsx}": [
       "prettier --write"
     ],
     "**/*.{json,css,md}": [

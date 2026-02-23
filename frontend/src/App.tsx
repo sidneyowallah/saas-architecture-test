@@ -23,7 +23,6 @@ function App() {
         fetchLogs();
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchLogs = async () => {
@@ -89,8 +88,9 @@ function App() {
   }
 
   // Extract the custom claim and username directly from the decoded JWT
-  const tenantId = (keycloak.tokenParsed as any)?.tenant_id || 'Unknown Tenant';
-  const username = (keycloak.tokenParsed as any)?.preferred_username || 'User';
+  const tenantId = (keycloak.tokenParsed as { tenant_id?: string })?.tenant_id || 'Unknown Tenant';
+  const username =
+    (keycloak.tokenParsed as { preferred_username?: string })?.preferred_username || 'User';
 
   return (
     <div className="app-container">
@@ -103,7 +103,7 @@ function App() {
         }}
       >
         <div>
-          <h1 className="title">Security Operations Center</h1>
+          <h1 className="title">Security Operations Center Test</h1>
           <p className="subtitle">Real-time threat monitoring & log ingestion</p>
         </div>
         <button
@@ -205,21 +205,28 @@ function App() {
                   </td>
                 </tr>
               ) : (
-                logs.map((log: any) => (
-                  <tr key={log.id}>
-                    <td>
-                      <span className="log-id">{String(log.id).padStart(4, '0')}</span>
-                    </td>
-                    <td style={{ fontWeight: 500 }}>{log.event}</td>
-                    <td>{log.ipAddress}</td>
-                    <td style={{ color: 'var(--text-muted)' }}>
-                      {new Date(log.createdAt).toLocaleString(undefined, {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      })}
-                    </td>
-                  </tr>
-                ))
+                logs.map(
+                  (log: {
+                    id: number | string;
+                    event: string;
+                    ipAddress: string;
+                    createdAt: string;
+                  }) => (
+                    <tr key={log.id}>
+                      <td>
+                        <span className="log-id">{String(log.id).padStart(4, '0')}</span>
+                      </td>
+                      <td style={{ fontWeight: 500 }}>{log.event}</td>
+                      <td>{log.ipAddress}</td>
+                      <td style={{ color: 'var(--text-muted)' }}>
+                        {new Date(log.createdAt).toLocaleString(undefined, {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })}
+                      </td>
+                    </tr>
+                  )
+                )
               )}
             </tbody>
           </table>
