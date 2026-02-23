@@ -16,6 +16,7 @@
     ]
   },
   "scripts": {
+    "test": "npm run test --prefix backend && npm run test --prefix frontend",
     "prepare": "husky"
   }
 }
