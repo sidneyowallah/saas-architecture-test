@@ -103,7 +103,7 @@ function App() {
         }}
       >
         <div>
-          <h1 className="title">Security Operations Center Test</h1>
+          <h1 className="title">Security Operations Center</h1>
           <p className="subtitle">Real-time threat monitoring & log ingestion</p>
         </div>
         <button
