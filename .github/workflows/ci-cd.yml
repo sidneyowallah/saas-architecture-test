@@ -148,6 +148,10 @@ jobs:
             
           docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
 
+          # Tag as latest for ECS
+          docker tag $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$REPOSITORY:latest
+          docker push $ECR_REGISTRY/$REPOSITORY:latest
+
       # 6. ZERO-DOWNTIME DEPLOYMENT: Trigger ECS to gracefully replace the containers
       - name: Force ECS Fargate Update
         run: |
