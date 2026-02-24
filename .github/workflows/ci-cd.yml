@@ -19,8 +19,8 @@ permissions:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REGISTRY: 123456789012.dkr.ecr.us-east-1.amazonaws.com # Replace with your AWS Account ID
-  PROD_API_URL: https://api.yourdomain.com # Replace with your actual production backend URL
+  ECR_REGISTRY: 569758639273.dkr.ecr.us-east-1.amazonaws.com
+  PROD_API_URL: https://api.rwako.com
 
 jobs:
   # =========================================================
