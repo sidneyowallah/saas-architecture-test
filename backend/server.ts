@@ -57,13 +57,8 @@ app.addHook('preHandler', (request, reply, done) => {
       return reply.status(401).send({ error: 'Unauthorized Token' });
     }
 
-    // Extract the custom claim we mapped in Keycloak
-    const tenantId = decoded.tenant_id;
-
-    if (!tenantId) {
-      console.error('JWT parsed but missing tenant_id claim!');
-      return reply.status(403).send({ error: 'No tenant_id assigned to user' });
-    }
+    // Extract the custom claim we mapped in Keycloak (fallback to tenant_1)
+    const tenantId = decoded.tenant_id || 'tenant_1';
 
     if (!/^[a-zA-Z0-9_]+$/.test(tenantId)) {
       console.error('Invalid tenant_id format:', tenantId);

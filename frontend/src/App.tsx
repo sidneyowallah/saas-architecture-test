@@ -93,7 +93,7 @@ function App() {
   }
 
   // Extract the custom claim and username directly from the decoded JWT
-  const tenantId = (keycloak.tokenParsed as { tenant_id?: string })?.tenant_id || 'Unknown Tenant';
+  const tenantId = (keycloak.tokenParsed as { tenant_id?: string })?.tenant_id || 'tenant_1';
   const username =
     (keycloak.tokenParsed as { preferred_username?: string })?.preferred_username || 'User';
 
