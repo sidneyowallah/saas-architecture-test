@@ -22,6 +22,10 @@ const client = jwksClient({
 
 function getKey(header: any, callback: any) {
   client.getSigningKey(header.kid, (err, key) => {
+    if (err) {
+      console.error('Failed to get JWKS signing key:', err);
+      return callback(err, null);
+    }
     const signingKey = key?.getPublicKey();
     callback(null, signingKey);
   });
@@ -36,17 +40,20 @@ app.addHook('preHandler', (request, reply, done) => {
 
   const authHeader = request.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.error('Missing or invalid Authorization header');
     return reply.status(401).send({ error: 'Missing or Invalid Token' });
   }
 
   const token = authHeader.split(' ')[1];
   if (!token) {
+    console.error('Empty token payload');
     return reply.status(401).send({ error: 'Missing Token Payload' });
   }
 
   // Verify the JWT cryptographically against Keycloak
   jwt.verify(token, getKey, {}, (err, decoded: any) => {
     if (err) {
+      console.error('JWT Verification Failed:', err);
       return reply.status(401).send({ error: 'Unauthorized Token' });
     }
 
@@ -54,10 +61,12 @@ app.addHook('preHandler', (request, reply, done) => {
     const tenantId = decoded.tenant_id;
 
     if (!tenantId) {
+      console.error('JWT parsed but missing tenant_id claim!');
       return reply.status(403).send({ error: 'No tenant_id assigned to user' });
     }
 
     if (!/^[a-zA-Z0-9_]+$/.test(tenantId)) {
+      console.error('Invalid tenant_id format:', tenantId);
       return reply.status(403).send({ error: 'Invalid tenant_id format' });
     }
 
