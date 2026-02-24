@@ -97,6 +97,10 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, linux, x64, saas-ci]
 
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -107,6 +111,12 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: './backend/package-lock.json'
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::569758639273:role/saas-ci/saas-ci-runner-role
+          aws-region: us-east-1
 
       - name: Login to Amazon ECR
         id: login-ecr

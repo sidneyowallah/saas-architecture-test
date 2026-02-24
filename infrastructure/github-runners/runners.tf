@@ -69,6 +69,11 @@ module "github_runner" {
   # These are the exact labels we targeted in our CI/CD YAML files!
   runner_extra_labels = ["ec2-spot", "saas-ci"]
 
+  # Grant the runner the permissions to push to ECR
+  runner_iam_role_managed_policy_arns = [
+    "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
+  ]
+
   # Uncomment this line ONLY IF you have never used EC2 Spot Instances in your AWS account before.
   # AWS requires a one-time Service Linked Role to allow Spot instances to be created.
   # create_service_linked_role_spot = true 
