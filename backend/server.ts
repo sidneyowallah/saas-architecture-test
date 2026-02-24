@@ -29,6 +29,11 @@ function getKey(header: any, callback: any) {
 
 // Global Auth & Multi-Tenancy Middleware
 app.addHook('preHandler', (request, reply, done) => {
+  // Allow AWS ALB and monitoring tools to health-check the server without JWT tokens
+  if (request.url.startsWith('/health')) {
+    return done();
+  }
+
   const authHeader = request.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return reply.status(401).send({ error: 'Missing or Invalid Token' });
@@ -73,6 +78,10 @@ async function withTenant<T>(tenantId: string, callback: () => Promise<T>) {
   }
 }
 
+app.get('/health', async (request, reply) => {
+  return { status: 'healthy', timestamp: new Date().toISOString() };
+});
+
 app.get('/logs', async (request, reply) => {
   const tenantId = (request as any).tenantId;
   const logs = await withTenant(tenantId, async () => {
@@ -91,7 +100,8 @@ app.post('/logs', async (request, reply) => {
   return { success: true };
 });
 
-app.listen({ port: 8080 }, (err, address) => {
+// Bind to 0.0.0.0 so AWS Fargate can accept external traffic
+app.listen({ port: 8080, host: '0.0.0.0' }, (err, address) => {
   if (err) throw err;
   console.log(`Backend listening at ${address}`);
 });
