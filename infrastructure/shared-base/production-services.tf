@@ -121,6 +121,14 @@ resource "aws_ecs_task_definition" "backend_task" {
       {
         name  = "NODE_ENV"
         value = "production"
+      },
+      {
+        name  = "KEYCLOAK_URL"
+        value = "https://${aws_lb.shared.dns_name}/auth"
+      },
+      {
+        name  = "NODE_TLS_REJECT_UNAUTHORIZED"
+        value = "0"
       }
     ]
 

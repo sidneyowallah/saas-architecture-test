@@ -1,8 +1,13 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import Keycloak from 'keycloak-js';
 
-// Initialize Keycloak (Points to your local Docker container)
-const keycloakUrl = import.meta.env.VITE_KEYCLOAK_URL || 'http://localhost:8081';
+// Initialize Keycloak
+// Dynamically resolve Keycloak depending on whether we are in Docker or AWS Fargate
+const isLocal =
+  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const defaultKeycloakUrl = isLocal ? 'http://localhost:8081' : `${window.location.origin}/auth`;
+
+const keycloakUrl = import.meta.env.VITE_KEYCLOAK_URL || defaultKeycloakUrl;
 const keycloak = new Keycloak({
   url: keycloakUrl,
   realm: 'saas-realm',

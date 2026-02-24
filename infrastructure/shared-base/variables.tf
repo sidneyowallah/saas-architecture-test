@@ -15,3 +15,15 @@ variable "certificate_arn" {
   description = "The ARN of your ACM Certificate for *.yourdomain.com"
   type        = string
 }
+
+variable "keycloak_admin_user" {
+  description = "Master admin username for Keycloak"
+  type        = string
+  default     = "admin"
+}
+
+variable "keycloak_admin_password" {
+  description = "Master admin password for Keycloak"
+  type        = string
+  sensitive   = true
+}
