@@ -34,7 +34,7 @@ resource "aws_ssm_parameter" "database_url" {
   name        = "/saas/${var.environment}/database/url"
   description = "PostgreSQL Database URL"
   type        = "SecureString"
-  # Constructing the connection string with the correct username 'saas_admin'
-  value       = "postgres://saas_admin:${var.db_password}@${aws_db_instance.shared_postgres.endpoint}/saas_core"
+  # Constructing the connection string with the correct username 'saas_admin' and SSL enforcement
+  value       = "postgres://saas_admin:${var.db_password}@${aws_db_instance.shared_postgres.endpoint}/saas_core?sslmode=require"
   overwrite   = true
 }

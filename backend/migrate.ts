@@ -1,7 +1,12 @@
 import { Pool } from 'pg';
 import 'dotenv/config';
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+});
 
 async function runMigrations() {
   const tenants = ['tenant_a', 'tenant_b'];
