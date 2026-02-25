@@ -11,7 +11,12 @@ const app = Fastify({ logger: true });
 const allowedOrigins = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',') : '*';
 app.register(cors, { origin: allowedOrigins });
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+});
 const db = drizzle(pool);
 
 // Setup JWKS Client to fetch public keys from Keycloak dynamically
