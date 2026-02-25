@@ -45,7 +45,7 @@ module "eks" {
       }
     }
     github_actions = {
-      principal_arn     = "arn:aws:iam::569758639273:role/saas-github-actions-deploy-role"
+      principal_arn     = aws_iam_role.github_actions_ecr_deploy.arn
       policy_associations = {
         admin = {
           policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
