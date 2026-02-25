@@ -70,6 +70,29 @@ resource "aws_iam_role_policy" "github_actions_eks_access" {
   })
 }
 
+# Grant the Action Runner the power to fetch secrets from SSM Parameter Store
+resource "aws_iam_role_policy" "github_actions_ssm_access" {
+  name = "github-actions-ssm-access-policy"
+  role = aws_iam_role.github_actions_ecr_deploy.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath"
+        ]
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}:569758639273:parameter/saas/*"
+        ]
+      }
+    ]
+  })
+}
+
 # Output the new Role ARN for the CI/CD Pipeline
 output "github_actions_deploy_role_arn" {
   description = "The IAM Role ARN that GitHub Actions must assume via OIDC to deploy."

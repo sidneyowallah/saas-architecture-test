@@ -11,6 +11,7 @@ resource "aws_ssm_parameter" "keycloak_admin_password" {
   description = "Keycloak Master Admin Password"
   type        = "SecureString"
   value       = var.keycloak_admin_password
+  overwrite   = true
 }
 
 resource "aws_ssm_parameter" "db_password" {
@@ -18,6 +19,7 @@ resource "aws_ssm_parameter" "db_password" {
   description = "Shared PostgreSQL Database Master Password"
   type        = "SecureString"
   value       = var.db_password
+  overwrite   = true
 }
 
 resource "aws_ssm_parameter" "keycloak_admin_user" {
@@ -25,6 +27,7 @@ resource "aws_ssm_parameter" "keycloak_admin_user" {
   description = "Keycloak Master Admin Username"
   type        = "String"
   value       = var.keycloak_admin_user
+  overwrite   = true
 }
 
 resource "aws_ssm_parameter" "database_url" {
@@ -33,4 +36,5 @@ resource "aws_ssm_parameter" "database_url" {
   type        = "SecureString"
   # Constructing the connection string from existing variables/outputs
   value       = "postgres://${var.db_password}@${aws_db_instance.shared_postgres.endpoint}/saas_core"
+  overwrite   = true
 }
