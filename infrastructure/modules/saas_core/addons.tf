@@ -14,6 +14,27 @@ resource "helm_release" "external_secrets" {
     name  = "installCRDs"
     value = "true"
   }
+
+  set {
+    name  = "serviceAccount.create"
+    value = "false"
+  }
+
+  set {
+    name  = "serviceAccount.name"
+    value = "external-secrets"
+  }
+}
+
+resource "kubernetes_service_account" "external_secrets" {
+  metadata {
+    name      = "external-secrets"
+    namespace = "external-secrets"
+    annotations = {
+      "eks.amazonaws.com/role-arn" = module.iam_role_for_service_accounts.iam_role_arn
+    }
+  }
+  depends_on = [module.eks]
 }
 
 # 2. AWS Load Balancer Controller
