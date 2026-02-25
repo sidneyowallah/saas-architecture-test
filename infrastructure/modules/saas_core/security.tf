@@ -2,7 +2,7 @@
 
 # 1. Load Balancer Security Group (Public Internet Access)
 resource "aws_security_group" "alb_sg" {
-  name        = "saas-alb-sg"
+  name        = "saas-${var.environment}-alb-sg"
   description = "Allow HTTPS and HTTP inbound"
   vpc_id      = module.vpc.vpc_id
 
@@ -12,7 +12,7 @@ resource "aws_security_group" "alb_sg" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  
+
   ingress {
     from_port   = 80
     to_port     = 80
@@ -30,7 +30,7 @@ resource "aws_security_group" "alb_sg" {
 
 # 2. ECS Containers Security Group (Internal Access Only)
 resource "aws_security_group" "ecs_sg" {
-  name        = "ecs-tasks-sg" # Looked up by PR scripts
+  name        = "${var.environment}-ecs-tasks-sg" # Looked up by PR scripts
   description = "Allow inbound from ALB only"
   vpc_id      = module.vpc.vpc_id
 
@@ -51,7 +51,7 @@ resource "aws_security_group" "ecs_sg" {
 
 # 3. Database Security Group (Deep Internal Access Only)
 resource "aws_security_group" "db_sg" {
-  name        = "database-sg"
+  name        = "${var.environment}-database-sg"
   description = "Allow inbound from ECS tasks only"
   vpc_id      = module.vpc.vpc_id
 

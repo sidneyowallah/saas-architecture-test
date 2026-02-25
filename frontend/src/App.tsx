@@ -14,6 +14,8 @@ const keycloak = new Keycloak({
   clientId: 'saas-frontend',
 });
 
+let initPromise: Promise<boolean> | null = null;
+
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [logs, setLogs] = useState([]);
@@ -22,7 +24,10 @@ function App() {
 
   // 1. Authenticate with Keycloak on mount
   useEffect(() => {
-    keycloak.init({ onLoad: 'login-required' }).then((auth) => {
+    if (!initPromise) {
+      initPromise = keycloak.init({ onLoad: 'login-required' });
+    }
+    initPromise.then((auth) => {
       setAuthenticated(auth);
       if (auth) {
         fetchLogs();
@@ -32,7 +37,7 @@ function App() {
 
   const fetchLogs = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+      const apiUrl = import.meta.env.VITE_API_URL || `${window.location.origin}/api`;
       const res = await fetch(`${apiUrl}/logs`, {
         headers: {
           // 2. Send the Keycloak JWT to the Fastify backend
@@ -52,7 +57,7 @@ function App() {
 
     setIsSubmitting(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+      const apiUrl = import.meta.env.VITE_API_URL || `${window.location.origin}/api`;
       await fetch(`${apiUrl}/logs`, {
         method: 'POST',
         headers: {
@@ -93,9 +98,25 @@ function App() {
   }
 
   // Extract the custom claim and username directly from the decoded JWT
-  const tenantId = (keycloak.tokenParsed as { tenant_id?: string })?.tenant_id || 'tenant_1';
+  const tenantId = (keycloak.tokenParsed as { tenant_id?: string })?.tenant_id || '';
   const username =
     (keycloak.tokenParsed as { preferred_username?: string })?.preferred_username || 'User';
+
+  if (!tenantId) {
+    return (
+      <div
+        className="app-container"
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '100vh',
+        }}
+      >
+        <h2>Error: Active User is not assigned a Tenant Org in Keycloak.</h2>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">

@@ -138,7 +138,7 @@ jobs:
           IMAGE_TAG=${{ github.sha }}
           REPOSITORY=saas-backend
 
-          docker build -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker build --platform linux/amd64 -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
 
           # Tag as latest for easy reference
@@ -153,6 +153,7 @@ jobs:
           REPOSITORY=saas-frontend
 
           docker build \
+            --platform linux/amd64 \
             --build-arg VITE_API_URL=${{ env.PROD_API_URL }} \
             -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG .
             
@@ -162,8 +163,15 @@ jobs:
           docker tag $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$REPOSITORY:latest
           docker push $ECR_REGISTRY/$REPOSITORY:latest
 
-      # 6. ZERO-DOWNTIME DEPLOYMENT: Trigger ECS to gracefully replace the containers
-      - name: Force ECS Fargate Update
+      # 6. ZERO-DOWNTIME DEPLOYMENT: Deploy the updated manifests to Kubernetes
+      - name: Deploy to Kubernetes (EKS)
         run: |
-          aws ecs update-service --cluster saas-backend-cluster --service fastify-service --force-new-deployment
-          aws ecs update-service --cluster saas-frontend-cluster --service nginx-frontend-service --force-new-deployment
+          # 1. Update kubeconfig to connect to the new cluster
+          aws eks update-kubeconfig --name saas-eks-cluster --region us-east-1
+
+          # 2. Apply all Kubernetes manifests (Deployments, Services, Ingress)
+          kubectl apply -f ../kubernetes/
+
+          # 3. Trigger a rolling restart to ensure the new images are pulled
+          kubectl rollout restart deployment saas-backend
+          kubectl rollout restart deployment saas-frontend

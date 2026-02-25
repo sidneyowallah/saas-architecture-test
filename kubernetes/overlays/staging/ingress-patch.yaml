@@ -1,0 +1,52 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: saas-ingress
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: 'arn:aws:acm:us-east-1:569758639273:certificate/d8f56e74-0895-47e2-b8a3-bbf018e11c5f'
+spec:
+  rules:
+    - host: api.staging.rwako.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: saas-backend
+                port:
+                  number: 8080
+    - host: auth.staging.rwako.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: saas-keycloak
+                port:
+                  number: 8080
+    - host: staging.rwako.com
+      http:
+        paths:
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: saas-keycloak
+                port:
+                  number: 8080
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: saas-backend
+                port:
+                  number: 8080
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: saas-frontend
+                port:
+                  number: 80

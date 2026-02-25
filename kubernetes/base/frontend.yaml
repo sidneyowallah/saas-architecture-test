@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: saas-frontend
+  labels:
+    app: saas-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: saas-frontend
+  template:
+    metadata:
+      labels:
+        app: saas-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend:latest
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: saas-frontend
+spec:
+  selector:
+    app: saas-frontend
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80

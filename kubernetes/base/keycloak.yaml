@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: saas-keycloak
+  labels:
+    app: saas-keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: saas-keycloak
+  template:
+    metadata:
+      labels:
+        app: saas-keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:24.0.0
+          args: ['start']
+          ports:
+            - containerPort: 8080
+            - containerPort: 8443
+          env:
+            - name: KEYCLOAK_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: saas-auth-secret
+                  key: keycloak_admin
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: saas-auth-secret
+                  key: keycloak_admin_password
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: saas-db-secret
+                  key: database_jdbc_url
+            - name: KC_DB_USERNAME
+              value: saas_admin
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: saas-db-secret
+                  key: database_password
+            - name: KC_PROXY
+              value: edge
+            - name: KC_HOSTNAME_STRICT
+              value: 'false'
+            - name: KC_HOSTNAME_STRICT_HTTPS
+              value: 'false'
+            - name: KC_HTTP_RELATIVE_PATH
+              value: '/auth'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: saas-keycloak
+spec:
+  selector:
+    app: saas-keycloak
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080

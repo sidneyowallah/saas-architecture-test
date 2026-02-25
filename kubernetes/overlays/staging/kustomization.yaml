@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: staging
+
+resources:
+  - ../../base
+
+patches:
+  - path: ingress-patch.yaml
+
+  # Override the External-Secrets metadata to pull from the /saas/staging/ SSM path inside AWS
+  - target:
+      kind: ExternalSecret
+      name: saas-auth-sync
+    patch: |-
+      - op: replace
+        path: /spec/data/0/remoteRef/key
+        value: /saas/staging/keycloak/admin-password
+      - op: replace
+        path: /spec/data/1/remoteRef/key
+        value: /saas/staging/keycloak/admin-user
+  - target:
+      kind: ExternalSecret
+      name: saas-db-sync
+    patch: |-
+      - op: replace
+        path: /spec/data/0/remoteRef/key
+        value: /saas/staging/database/password
+      - op: replace
+        path: /spec/data/1/remoteRef/key
+        value: /saas/staging/database/url
+      - op: replace
+        path: /spec/data/2/remoteRef/key
+        value: /saas/staging/database/jdbc-url

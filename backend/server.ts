@@ -57,8 +57,12 @@ app.addHook('preHandler', (request, reply, done) => {
       return reply.status(401).send({ error: 'Unauthorized Token' });
     }
 
-    // Extract the custom claim we mapped in Keycloak (fallback to tenant_1)
-    const tenantId = decoded.tenant_id || 'tenant_1';
+    // Extract the custom claim we mapped in Keycloak
+    const tenantId = decoded.tenant_id;
+    if (!tenantId) {
+      console.error('User JWT is missing the required tenant_id claim.');
+      return reply.status(403).send({ error: 'Missing tenant assignment.' });
+    }
 
     if (!/^[a-zA-Z0-9_]+$/.test(tenantId)) {
       console.error('Invalid tenant_id format:', tenantId);
@@ -71,11 +75,12 @@ app.addHook('preHandler', (request, reply, done) => {
   });
 });
 
-async function withTenant<T>(tenantId: string, callback: () => Promise<T>) {
+async function withTenant<T>(tenantId: string, callback: (tenantDb: any) => Promise<T>) {
   const pgClient = await pool.connect();
   try {
     await pgClient.query(`SET search_path TO ${tenantId}`);
-    return await callback();
+    const tenantDb = drizzle(pgClient);
+    return await callback(tenantDb);
   } finally {
     await pgClient.query(`SET search_path TO public`);
     pgClient.release();
@@ -86,10 +91,35 @@ app.get('/health', async (request, reply) => {
   return { status: 'healthy', timestamp: new Date().toISOString() };
 });
 
+// Logs routes with /api prefix for Ingress compatibility
+app.register(
+  async (api) => {
+    api.get('/logs', async (request, reply) => {
+      const tenantId = (request as any).tenantId;
+      const logs = await withTenant(tenantId, async (tenantDb) => {
+        return await tenantDb.select().from(securityLogs);
+      });
+      return { logs };
+    });
+
+    api.post('/logs', async (request, reply) => {
+      const tenantId = (request as any).tenantId;
+      const { event, ipAddress } = request.body as any;
+
+      await withTenant(tenantId, async (tenantDb) => {
+        await tenantDb.insert(securityLogs).values({ event, ipAddress });
+      });
+      return { success: true };
+    });
+  },
+  { prefix: '/api' }
+);
+
+// Also keep legacy /logs for direct access via api subdomain if needed
 app.get('/logs', async (request, reply) => {
   const tenantId = (request as any).tenantId;
-  const logs = await withTenant(tenantId, async () => {
-    return await db.select().from(securityLogs);
+  const logs = await withTenant(tenantId, async (tenantDb) => {
+    return await tenantDb.select().from(securityLogs);
   });
   return { logs };
 });
@@ -98,8 +128,8 @@ app.post('/logs', async (request, reply) => {
   const tenantId = (request as any).tenantId;
   const { event, ipAddress } = request.body as any;
 
-  await withTenant(tenantId, async () => {
-    await db.insert(securityLogs).values({ event, ipAddress });
+  await withTenant(tenantId, async (tenantDb) => {
+    await tenantDb.insert(securityLogs).values({ event, ipAddress });
   });
   return { success: true };
 });

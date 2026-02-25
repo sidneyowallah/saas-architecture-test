@@ -5,7 +5,7 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"
 
-  name = "saas-vpc" # Looked up by PR scripts
+  name = "saas-${var.environment}-vpc" # Looked up by PR scripts
   cidr = "10.0.0.0/16"
 
   azs              = ["${var.aws_region}a", "${var.aws_region}b"]
@@ -19,7 +19,9 @@ module "vpc" {
   enable_dns_support   = true
 
   # Crucial: Allows the PR environments to lookup subnets automatically
+  # Also required for EKS internal load balancers
   private_subnet_tags = {
     Tier = "Private"
+    "kubernetes.io/role/internal-elb" = "1"
   }
 }

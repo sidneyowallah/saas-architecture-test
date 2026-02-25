@@ -4,8 +4,8 @@
 
 # Define the GitHub Actions OIDC Provider
 resource "aws_iam_openid_connect_provider" "github_actions" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
 
   # The thumbprint is required by AWS for OIDC providers
   # This is the official GitHub thumbprint: https://github.blog/changelog/2022-01-13-github-actions-update-on-oidc-based-deployments-to-aws/
@@ -49,9 +49,9 @@ resource "aws_iam_role_policy_attachment" "github_actions_ecr_access" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
 }
 
-# Grant the Action Runner the power to trigger ECS Force New Deployments
-resource "aws_iam_role_policy" "github_actions_ecs_update" {
-  name = "github-actions-ecs-update-policy"
+# Grant the Action Runner the power to interact with EKS
+resource "aws_iam_role_policy" "github_actions_eks_access" {
+  name = "github-actions-eks-access-policy"
   role = aws_iam_role.github_actions_ecr_deploy.name
 
   policy = jsonencode({
@@ -60,12 +60,10 @@ resource "aws_iam_role_policy" "github_actions_ecs_update" {
       {
         Effect = "Allow"
         Action = [
-          "ecs:UpdateService",
-          "ecs:DescribeServices"
+          "eks:DescribeCluster"
         ]
         Resource = [
-          "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:service/saas-backend-cluster/fastify-service",
-          "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:service/saas-frontend-cluster/nginx-frontend-service"
+          "arn:aws:eks:${var.aws_region}:*:cluster/saas-eks-cluster"
         ]
       }
     ]
