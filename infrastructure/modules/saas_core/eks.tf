@@ -44,6 +44,17 @@ module "eks" {
         }
       }
     }
+    github_actions = {
+      principal_arn     = "arn:aws:iam::569758639273:role/saas-github-actions-deploy-role"
+      policy_associations = {
+        admin = {
+          policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = {
+            type = "cluster"
+          }
+        }
+      }
+    }
   }
 
   tags = {

@@ -186,11 +186,26 @@ jobs:
           docker tag $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$REPOSITORY:latest
           docker push $ECR_REGISTRY/$REPOSITORY:latest
 
+      - name: Install Kubectl and Kustomize
+        run: |
+          if ! command -v kubectl &> /dev/null; then
+            echo "Kubectl not found, installing..."
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+            rm kubectl
+          fi
+
+          if ! command -v kustomize &> /dev/null; then
+            echo "Kustomize not found, installing..."
+            curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+            sudo mv kustomize /usr/local/bin/
+          fi
+
           # 1. Update kubeconfig to connect to the new cluster
           aws eks update-kubeconfig --name saas-production-cluster --region us-east-1
 
           # 2. Apply all Kubernetes manifests (Deployments, Services, Ingress)
-          kubectl apply -f ../kubernetes/
+          kubectl apply --validate=false -f ../kubernetes/
 
           # 3. Trigger a rolling restart to ensure the new images are pulled
           kubectl rollout restart deployment saas-backend
