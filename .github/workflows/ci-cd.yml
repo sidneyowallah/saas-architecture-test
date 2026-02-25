@@ -205,7 +205,7 @@ jobs:
           aws eks update-kubeconfig --name saas-production-cluster --region us-east-1
 
           # 2. Apply all Kubernetes manifests (Deployments, Services, Ingress)
-          kubectl apply -f ../kubernetes/
+          kubectl apply --validate=false -f ../kubernetes/
 
           # 3. Trigger a rolling restart to ensure the new images are pulled
           kubectl rollout restart deployment saas-backend

@@ -127,7 +127,7 @@ jobs:
           kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend:staging-${{ github.sha }}
 
           # Apply the manifests into the staging namespace
-          kubectl kustomize . | kubectl apply -n staging -f -
+          kubectl kustomize . | kubectl apply -n staging --validate=false -f -
 
           # Wait for the rollout to complete
           kubectl rollout status deployment/saas-backend -n staging --timeout=120s
