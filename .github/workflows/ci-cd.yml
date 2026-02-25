@@ -203,9 +203,13 @@ jobs:
           # 1. Update kubeconfig to connect to the staging cluster (as prod cluster doesn't exist)
           aws eks update-kubeconfig --name saas-staging-cluster --region us-east-1
 
-          # 2. Apply all Kubernetes manifests (Deployments, Services, Ingress)
-          kubectl apply -f ../kubernetes/
+          # 2. Update the kustomization.yaml to point to the newly built image tags!
+          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend:${{ github.sha }}
+          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend:${{ github.sha }}
 
-          # 3. Trigger a rolling restart to ensure the new images are pulled
-          kubectl rollout restart deployment saas-backend
-          kubectl rollout restart deployment saas-frontend
+          # 3. Apply the manifests using Kustomize (This handles all namespaces and overlays)
+          kubectl apply -k . --validate=false
+
+          # 4. Wait for the rollout to complete in the production namespace
+          kubectl rollout status deployment/saas-backend -n production --timeout=120s
+          kubectl rollout status deployment/saas-frontend -n production --timeout=120s
