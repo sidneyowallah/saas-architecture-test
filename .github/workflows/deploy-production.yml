@@ -135,25 +135,20 @@ jobs:
             echo "AWS CLI is already installed"
           fi
 
-      # 4. DATABASE MIGRATIONS: Run safely inside the VPC before deploying new code
-      - name: Run Database Migrations
-        working-directory: ./backend
+      - name: Install Kubectl and Kustomize
         run: |
-          # Fetch the production database URL from SSM Parameter Store dynamically
-          DATABASE_URL=$(aws ssm get-parameter --name "/saas/production/database/url" --with-decryption --query "Parameter.Value" --output text)
-
-          if [ -z "$DATABASE_URL" ]; then
-            echo "Error: Failed to fetch DATABASE_URL from SSM"
-            exit 1
+          if ! command -v kubectl &> /dev/null; then
+            echo "Kubectl not found, installing..."
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+            rm kubectl
           fi
 
-          export DATABASE_URL=$DATABASE_URL
-
-          # Debug: Show the hostname being used (masking password)
-          echo "Connecting to: $(echo $DATABASE_URL | sed 's/:.*@/:****@/')"
-
-          npm ci
-          npm run migrate
+          if ! command -v kustomize &> /dev/null; then
+            echo "Kustomize not found, installing..."
+            curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+            sudo mv kustomize /usr/local/bin/
+          fi
 
       - name: Build and Push Backend Image
         working-directory: ./backend
@@ -182,32 +177,29 @@ jobs:
             
           docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
 
-      - name: Install Kubectl and Kustomize
-        run: |
-          if ! command -v kubectl &> /dev/null; then
-            echo "Kubectl not found, installing..."
-            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-            sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-            rm kubectl
-          fi
-
-          if ! command -v kustomize &> /dev/null; then
-            echo "Kustomize not found, installing..."
-            curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-            sudo mv kustomize /usr/local/bin/
-          fi
-
-      - name: Deploy to Production (on Staging Cluster)
+      # 6. DATABASE MIGRATIONS: Run safely inside the VPC using a Kubernetes Job
+      - name: Run Database Migrations
         working-directory: ./kubernetes/overlays/production
         run: |
-          # 1. Update kubeconfig to connect to the production cluster
           aws eks update-kubeconfig --name saas-production-cluster --region us-east-1
 
-          # 2. Update the kustomization.yaml to point to the newly built image tags!
-          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-backend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-backend:${{ github.sha }}
-          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-frontend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-frontend:${{ github.sha }}
+          # Update the kustomization.yaml to point to the newly built image tags!
+          # This ensures the migration job uses the latest backend image.
+          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-backend:${{ github.sha }}
+          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-frontend:${{ github.sha }}
 
-          # 3. Apply the manifests using Kustomize (This handles all namespaces and overlays)
+          # Delete old job if it exists to allow re-run
+          kubectl delete job saas-db-migrate -n production --ignore-not-found
+
+          # Apply manifests and wait for the migration job to finish
+          kubectl apply -k .
+          kubectl wait --for=condition=complete job/saas-db-migrate -n production --timeout=300s
+
+      - name: Deploy to Production
+        working-directory: ./kubernetes/overlays/production
+        run: |
+          # The apply happened in the migration step, but we run it again
+          # here just to be sure and to perform the final verification.
           kubectl apply -k . --validate=false
 
           # 4. Wait for the rollout to complete in the production namespace
