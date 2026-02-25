@@ -125,10 +125,13 @@ jobs:
       # 4. DATABASE MIGRATIONS: Run safely inside the VPC before deploying new code
       - name: Run Database Migrations
         working-directory: ./backend
-        env:
-          # Injected from GitHub Repository Secrets
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
+          # Fetch the production database URL from SSM Parameter Store dynamically
+          export DATABASE_URL=$(aws ssm get-parameter --name "/saas/production/database/url" --with-decryption --query "Parameter.Value" --output text)
+
+          # Debug: Show the hostname being used (masking password)
+          echo "Connecting to: $(echo $DATABASE_URL | sed 's/:.*@/:****@/')"
+
           npm ci
           npm run migrate
 

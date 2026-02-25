@@ -7,7 +7,7 @@ spec:
   replicas: 2
   template:
     spec:
-      repository: yourname/saas-architecture-test
+      repository: sidneyowallah/saas-architecture-test
       # Environment variables for the runner can go here.
       # Docker-in-Docker is supported by the ARC runner images out of the box.
       env: []

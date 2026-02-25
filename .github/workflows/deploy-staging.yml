@@ -72,7 +72,12 @@ jobs:
         working-directory: ./backend
         run: |
           # Fetch the staging database URL from SSM Parameter Store dynamically
-          export DATABASE_URL=$(aws ssm get-parameter --name "/saas/staging/database/jdbc-url" --with-decryption --query "Parameter.Value" --output text)
+          # Using the 'url' parameter which has the correct postgres:// prefix
+          export DATABASE_URL=$(aws ssm get-parameter --name "/saas/staging/database/url" --with-decryption --query "Parameter.Value" --output text)
+
+          # Debug: Show the hostname being used (masking password)
+          echo "Connecting to: $(echo $DATABASE_URL | sed 's/:.*@/:****@/')"
+
           npm ci
           npm run migrate
 
