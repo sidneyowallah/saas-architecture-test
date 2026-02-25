@@ -100,6 +100,16 @@ jobs:
           npm ci
           npm run migrate
 
+      - name: Install Kustomize
+        run: |
+          if ! command -v kustomize &> /dev/null; then
+            echo "Kustomize not found, installing..."
+            curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+            sudo mv kustomize /usr/local/bin/
+          else
+            echo "Kustomize is already installed"
+          fi
+
       # 3. DEPLOY TO KUBERNETES USING KUSTOMIZE
       - name: Deploy to Staging Cluster
         working-directory: ./kubernetes/overlays/staging

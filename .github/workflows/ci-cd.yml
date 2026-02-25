@@ -186,6 +186,16 @@ jobs:
           docker tag $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$REPOSITORY:latest
           docker push $ECR_REGISTRY/$REPOSITORY:latest
 
+      - name: Install Kustomize
+        run: |
+          if ! command -v kustomize &> /dev/null; then
+            echo "Kustomize not found, installing..."
+            curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+            sudo mv kustomize /usr/local/bin/
+          else
+            echo "Kustomize is already installed"
+          fi
+
           # 1. Update kubeconfig to connect to the new cluster
           aws eks update-kubeconfig --name saas-production-cluster --region us-east-1
 
