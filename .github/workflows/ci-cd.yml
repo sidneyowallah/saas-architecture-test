@@ -182,10 +182,6 @@ jobs:
             
           docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
 
-          # Tag as latest for ECS
-          docker tag $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$REPOSITORY:latest
-          docker push $ECR_REGISTRY/$REPOSITORY:latest
-
       - name: Install Kubectl and Kustomize
         run: |
           if ! command -v kubectl &> /dev/null; then
@@ -201,11 +197,14 @@ jobs:
             sudo mv kustomize /usr/local/bin/
           fi
 
-          # 1. Update kubeconfig to connect to the new cluster
-          aws eks update-kubeconfig --name saas-production-cluster --region us-east-1
+      - name: Deploy to Production (on Staging Cluster)
+        working-directory: ./kubernetes/overlays/production
+        run: |
+          # 1. Update kubeconfig to connect to the staging cluster (as prod cluster doesn't exist)
+          aws eks update-kubeconfig --name saas-staging-cluster --region us-east-1
 
           # 2. Apply all Kubernetes manifests (Deployments, Services, Ingress)
-          kubectl apply --validate=false -f ../kubernetes/
+          kubectl apply -f ../kubernetes/
 
           # 3. Trigger a rolling restart to ensure the new images are pulled
           kubectl rollout restart deployment saas-backend
