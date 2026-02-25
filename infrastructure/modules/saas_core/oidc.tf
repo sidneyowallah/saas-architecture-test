@@ -4,8 +4,9 @@
 
 data "aws_caller_identity" "current" {}
 
-# Define the GitHub Actions OIDC Provider
+# Define the GitHub Actions OIDC Provider (Global resource, created conditionally)
 resource "aws_iam_openid_connect_provider" "github_actions" {
+  count          = var.create_oidc_provider ? 1 : 0
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
 
@@ -13,13 +14,21 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
   thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1", "1c58a3a8518e8759bf075b76b750d4f2df264fcd"]
 }
 
+# Data source to fetch the provider if we didn't create it in this environment
+data "aws_iam_openid_connect_provider" "github_actions" {
+  url = "https://token.actions.githubusercontent.com"
+
+  # Ensure this only runs if we didn't create the resource above to avoid circular dependency or use the ARN directly
+  depends_on = [aws_iam_openid_connect_provider.github_actions]
+}
+
 # =========================================================================
 # IAM ROLE FOR DEPLOYMENT FROM GITHUB ACTIONS
 # =========================================================================
 
-# Create the IAM Role that GitHub Actions will assume
+# Create the IAM Role that GitHub Actions will assume (per environment)
 resource "aws_iam_role" "github_actions_ecr_deploy" {
-  name = "saas-github-actions-deploy-role"
+  name = "saas-${var.environment}-github-deploy-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -28,7 +37,7 @@ resource "aws_iam_role" "github_actions_ecr_deploy" {
         Action = "sts:AssumeRoleWithWebIdentity"
         Effect = "Allow"
         Principal = {
-          Federated = aws_iam_openid_connect_provider.github_actions.arn
+          Federated = data.aws_iam_openid_connect_provider.github_actions.arn
         }
         Condition = {
           "StringEquals" = {

@@ -37,4 +37,5 @@ module "saas_core" {
   certificate_arn         = var.certificate_arn
   keycloak_admin_user     = var.keycloak_admin_user
   keycloak_admin_password = var.keycloak_admin_password
+  create_oidc_provider    = false
 }

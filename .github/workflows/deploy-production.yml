@@ -1,4 +1,4 @@
-name: Full Stack CI/CD Pipeline
+name: Deploy Production Environment
 
 on:
   push:
@@ -115,7 +115,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::569758639273:role/saas-github-actions-deploy-role
+          role-to-assume: arn:aws:iam::569758639273:role/saas-production-github-deploy-role
           aws-region: us-east-1
 
       - name: Login to Amazon ECR
@@ -159,7 +159,7 @@ jobs:
         working-directory: ./backend
         run: |
           IMAGE_TAG=${{ github.sha }}
-          REPOSITORY=saas-backend
+          REPOSITORY=saas-production-backend
 
           docker build --platform linux/amd64 -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
@@ -173,7 +173,7 @@ jobs:
         working-directory: ./frontend
         run: |
           IMAGE_TAG=${{ github.sha }}
-          REPOSITORY=saas-frontend
+          REPOSITORY=saas-production-frontend
 
           docker build \
             --platform linux/amd64 \
@@ -200,12 +200,12 @@ jobs:
       - name: Deploy to Production (on Staging Cluster)
         working-directory: ./kubernetes/overlays/production
         run: |
-          # 1. Update kubeconfig to connect to the staging cluster (as prod cluster doesn't exist)
-          aws eks update-kubeconfig --name saas-staging-cluster --region us-east-1
+          # 1. Update kubeconfig to connect to the production cluster
+          aws eks update-kubeconfig --name saas-production-cluster --region us-east-1
 
           # 2. Update the kustomization.yaml to point to the newly built image tags!
-          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend:${{ github.sha }}
-          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend:${{ github.sha }}
+          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-backend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-backend:${{ github.sha }}
+          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-frontend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-frontend:${{ github.sha }}
 
           # 3. Apply the manifests using Kustomize (This handles all namespaces and overlays)
           kubectl apply -k . --validate=false

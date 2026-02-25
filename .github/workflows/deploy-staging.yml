@@ -36,7 +36,7 @@ jobs:
         with:
           # Note: In a real setup, you should create a dedicated saas-github-actions-staging-role
           # so staging cannot touch production resources!
-          role-to-assume: arn:aws:iam::569758639273:role/saas-github-actions-deploy-role
+          role-to-assume: arn:aws:iam::569758639273:role/saas-staging-github-deploy-role
           aws-region: us-east-1
 
       - name: Login to Amazon ECR
@@ -47,8 +47,8 @@ jobs:
         working-directory: ./backend
         run: |
           IMAGE_TAG=staging-${{ github.sha }}
-          docker build --platform linux/amd64 -t ${{ env.ECR_REGISTRY }}/saas-backend:$IMAGE_TAG .
-          docker push ${{ env.ECR_REGISTRY }}/saas-backend:$IMAGE_TAG
+          docker build --platform linux/amd64 -t ${{ env.ECR_REGISTRY }}/saas-staging-backend:$IMAGE_TAG .
+          docker push ${{ env.ECR_REGISTRY }}/saas-staging-backend:$IMAGE_TAG
 
       - name: Build and Push Frontend Image
         working-directory: ./frontend
@@ -57,8 +57,8 @@ jobs:
           docker build \
             --platform linux/amd64 \
             --build-arg VITE_API_URL=${{ env.STAGING_API_URL }} \
-            -t ${{ env.ECR_REGISTRY }}/saas-frontend:$IMAGE_TAG .
-          docker push ${{ env.ECR_REGISTRY }}/saas-frontend:$IMAGE_TAG
+            -t ${{ env.ECR_REGISTRY }}/saas-staging-frontend:$IMAGE_TAG .
+          docker push ${{ env.ECR_REGISTRY }}/saas-staging-frontend:$IMAGE_TAG
 
       # 2. RUN DATABASE MIGRATIONS ON STAGING DB
       - name: Setup Node
@@ -123,8 +123,8 @@ jobs:
           aws eks update-kubeconfig --name saas-staging-cluster --region us-east-1
 
           # Update the kustomization.yaml to point to the newly built image tags!
-          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend:staging-${{ github.sha }}
-          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend:staging-${{ github.sha }}
+          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-staging-backend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-staging-backend:staging-${{ github.sha }}
+          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-staging-frontend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-staging-frontend:staging-${{ github.sha }}
 
           # Apply the manifests into the staging namespace
           kubectl kustomize . | kubectl apply -n staging --validate=false -f -

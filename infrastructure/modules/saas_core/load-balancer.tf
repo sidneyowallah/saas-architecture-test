@@ -3,7 +3,7 @@
 # (Note: You must manually generate an ACM Certificate in the AWS Console for *.yourdomain.com and pass the ARN to the certificate_arn variable before running this).
 
 resource "aws_lb" "shared" {
-  name               = "saas-shared-alb" # Looked up by PR scripts
+  name               = "saas-${var.environment}-alb" # Looked up by PR scripts
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb_sg.id]

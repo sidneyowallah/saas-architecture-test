@@ -38,3 +38,9 @@ variable "keycloak_admin_password" {
   type        = string
   sensitive   = true
 }
+
+variable "create_oidc_provider" {
+  description = "Whether to create the GitHub OIDC provider (should be true only once per account)"
+  type        = bool
+  default     = true
+}
