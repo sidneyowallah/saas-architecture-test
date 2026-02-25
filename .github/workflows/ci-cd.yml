@@ -140,7 +140,14 @@ jobs:
         working-directory: ./backend
         run: |
           # Fetch the production database URL from SSM Parameter Store dynamically
-          export DATABASE_URL=$(aws ssm get-parameter --name "/saas/production/database/url" --with-decryption --query "Parameter.Value" --output text)
+          DATABASE_URL=$(aws ssm get-parameter --name "/saas/production/database/url" --with-decryption --query "Parameter.Value" --output text)
+
+          if [ -z "$DATABASE_URL" ]; then
+            echo "Error: Failed to fetch DATABASE_URL from SSM"
+            exit 1
+          fi
+
+          export DATABASE_URL=$DATABASE_URL
 
           # Debug: Show the hostname being used (masking password)
           echo "Connecting to: $(echo $DATABASE_URL | sed 's/:.*@/:****@/')"
@@ -179,11 +186,8 @@ jobs:
           docker tag $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$REPOSITORY:latest
           docker push $ECR_REGISTRY/$REPOSITORY:latest
 
-      # 6. ZERO-DOWNTIME DEPLOYMENT: Deploy the updated manifests to Kubernetes
-      - name: Deploy to Kubernetes (EKS)
-        run: |
           # 1. Update kubeconfig to connect to the new cluster
-          aws eks update-kubeconfig --name saas-eks-cluster --region us-east-1
+          aws eks update-kubeconfig --name saas-production-cluster --region us-east-1
 
           # 2. Apply all Kubernetes manifests (Deployments, Services, Ingress)
           kubectl apply -f ../kubernetes/
