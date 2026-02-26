@@ -113,6 +113,13 @@ jobs:
 
           # Apply manifests with --validate=false to bypass potential discovery cache lag
           kubectl apply -k . --validate=false
+
+          # WAIT for ExternalSecrets to sync from AWS before proceeding to job check
+          echo "Waiting for secrets to sync from AWS..."
+          kubectl wait --for=condition=Ready externalsecret/saas-auth-sync -n staging --timeout=60s
+          kubectl wait --for=condition=Ready externalsecret/saas-db-sync -n staging --timeout=60s
+
+          # Wait for the migration job to finish
           kubectl wait --for=condition=complete job/saas-db-migrate -n staging --timeout=300s
 
       # 3. DEPLOY TO KUBERNETES USING KUSTOMIZE
