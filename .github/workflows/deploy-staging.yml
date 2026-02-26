@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - staging
+  pull_request:
+    branches:
+      - staging
 
 # CONCURRENCY: Cancel older, redundant runs to save runner costs
 concurrency:
