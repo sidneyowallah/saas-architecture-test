@@ -1,0 +1,21 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: saas-db-migrate
+spec:
+  template:
+    spec:
+      containers:
+        - name: migrate
+          image: 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-backend:371b5bcc9e6ac4a2b7d7cb0b217f277f5007fe84
+          command: ['node', 'dist/migrate.js']
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: saas-db-secret
+                  key: database_url
+            - name: NODE_ENV
+              value: production
+      restartPolicy: OnFailure
+  backoffLimit: 4

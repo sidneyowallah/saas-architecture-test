@@ -39,3 +39,11 @@ resource "aws_ssm_parameter" "database_url" {
   value       = "postgres://saas_admin:${var.db_password}@${aws_db_instance.shared_postgres.endpoint}/saas_core"
   overwrite   = true
 }
+
+resource "aws_ssm_parameter" "database_jdbc_url" {
+  name        = "/saas/${var.environment}/database/jdbc-url"
+  description = "PostgreSQL JDBC Database URL for Keycloak"
+  type        = "SecureString"
+  value       = "jdbc:postgresql://${aws_db_instance.shared_postgres.endpoint}/saas_core"
+  overwrite   = true
+}

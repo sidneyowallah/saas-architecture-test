@@ -1,4 +1,4 @@
-name: Full Stack CI/CD Pipeline
+name: Deploy Production Environment
 
 on:
   push:
@@ -115,7 +115,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::569758639273:role/saas-github-actions-deploy-role
+          role-to-assume: arn:aws:iam::569758639273:role/saas-production-github-deploy-role
           aws-region: us-east-1
 
       - name: Login to Amazon ECR
@@ -135,57 +135,6 @@ jobs:
             echo "AWS CLI is already installed"
           fi
 
-      # 4. DATABASE MIGRATIONS: Run safely inside the VPC before deploying new code
-      - name: Run Database Migrations
-        working-directory: ./backend
-        run: |
-          # Fetch the production database URL from SSM Parameter Store dynamically
-          DATABASE_URL=$(aws ssm get-parameter --name "/saas/production/database/url" --with-decryption --query "Parameter.Value" --output text)
-
-          if [ -z "$DATABASE_URL" ]; then
-            echo "Error: Failed to fetch DATABASE_URL from SSM"
-            exit 1
-          fi
-
-          export DATABASE_URL=$DATABASE_URL
-
-          # Debug: Show the hostname being used (masking password)
-          echo "Connecting to: $(echo $DATABASE_URL | sed 's/:.*@/:****@/')"
-
-          npm ci
-          npm run migrate
-
-      - name: Build and Push Backend Image
-        working-directory: ./backend
-        run: |
-          IMAGE_TAG=${{ github.sha }}
-          REPOSITORY=saas-backend
-
-          docker build --platform linux/amd64 -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
-
-          # Tag as latest for easy reference
-          docker tag $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$REPOSITORY:latest
-          docker push $ECR_REGISTRY/$REPOSITORY:latest
-
-      # 5. FRONTEND BUILD ENV: Inject the production API URL during Docker build
-      - name: Build and Push Frontend Image
-        working-directory: ./frontend
-        run: |
-          IMAGE_TAG=${{ github.sha }}
-          REPOSITORY=saas-frontend
-
-          docker build \
-            --platform linux/amd64 \
-            --build-arg VITE_API_URL=${{ env.PROD_API_URL }} \
-            -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG .
-            
-          docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
-
-          # Tag as latest for ECS
-          docker tag $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$REPOSITORY:latest
-          docker push $ECR_REGISTRY/$REPOSITORY:latest
-
       - name: Install Kubectl and Kustomize
         run: |
           if ! command -v kubectl &> /dev/null; then
@@ -201,12 +150,58 @@ jobs:
             sudo mv kustomize /usr/local/bin/
           fi
 
-          # 1. Update kubeconfig to connect to the new cluster
+      - name: Build and Push Backend Image
+        working-directory: ./backend
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          REPOSITORY=saas-production-backend
+
+          docker build --platform linux/amd64 -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+          # Tag as latest for easy reference
+          docker tag $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$REPOSITORY:latest
+          docker push $ECR_REGISTRY/$REPOSITORY:latest
+
+      # 5. FRONTEND BUILD ENV: Inject the production API URL during Docker build
+      - name: Build and Push Frontend Image
+        working-directory: ./frontend
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          REPOSITORY=saas-production-frontend
+
+          docker build \
+            --platform linux/amd64 \
+            --build-arg VITE_API_URL=${{ env.PROD_API_URL }} \
+            -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG .
+            
+          docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+      # 6. DATABASE MIGRATIONS: Run safely inside the VPC using a Kubernetes Job
+      - name: Run Database Migrations
+        working-directory: ./kubernetes/overlays/production
+        run: |
           aws eks update-kubeconfig --name saas-production-cluster --region us-east-1
 
-          # 2. Apply all Kubernetes manifests (Deployments, Services, Ingress)
-          kubectl apply --validate=false -f ../kubernetes/
+          # Update the kustomization.yaml to point to the newly built image tags!
+          # This ensures the migration job uses the latest backend image.
+          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-backend:${{ github.sha }}
+          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-frontend:${{ github.sha }}
 
-          # 3. Trigger a rolling restart to ensure the new images are pulled
-          kubectl rollout restart deployment saas-backend
-          kubectl rollout restart deployment saas-frontend
+          # Delete old job if it exists to allow re-run
+          kubectl delete job saas-db-migrate -n production --ignore-not-found
+
+          # Apply manifests and wait for the migration job to finish
+          kubectl apply -k .
+          kubectl wait --for=condition=complete job/saas-db-migrate -n production --timeout=300s
+
+      - name: Deploy to Production
+        working-directory: ./kubernetes/overlays/production
+        run: |
+          # The apply happened in the migration step, but we run it again
+          # here just to be sure and to perform the final verification.
+          kubectl apply -k . --validate=false
+
+          # 4. Wait for the rollout to complete in the production namespace
+          kubectl rollout status deployment/saas-backend -n production --timeout=120s
+          kubectl rollout status deployment/saas-frontend -n production --timeout=120s

@@ -1,2 +1,14 @@
+# Block direct commits to main/staging
+protected_branches=("main" "staging")
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+for branch in "${protected_branches[@]}"; do
+  if [ "$current_branch" = "$branch" ]; then
+    echo "❌ ERROR: You are on the '$current_branch' branch. Direct commits are restricted."
+    echo "Please create a feature branch and open a Pull Request to the staging branch."
+    exit 1
+  fi
+done
+
 npx lint-staged
 npm test

@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - staging
+  pull_request:
+    branches:
+      - staging
 
 # CONCURRENCY: Cancel older, redundant runs to save runner costs
 concurrency:
@@ -36,37 +39,11 @@ jobs:
         with:
           # Note: In a real setup, you should create a dedicated saas-github-actions-staging-role
           # so staging cannot touch production resources!
-          role-to-assume: arn:aws:iam::569758639273:role/saas-github-actions-deploy-role
+          role-to-assume: arn:aws:iam::569758639273:role/saas-staging-github-deploy-role
           aws-region: us-east-1
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
-
-      # 1. BUILD BACKEND & FRONTEND WITH COMMIT SHA TAG
-      - name: Build and Push Backend Image
-        working-directory: ./backend
-        run: |
-          IMAGE_TAG=staging-${{ github.sha }}
-          docker build --platform linux/amd64 -t ${{ env.ECR_REGISTRY }}/saas-backend:$IMAGE_TAG .
-          docker push ${{ env.ECR_REGISTRY }}/saas-backend:$IMAGE_TAG
-
-      - name: Build and Push Frontend Image
-        working-directory: ./frontend
-        run: |
-          IMAGE_TAG=staging-${{ github.sha }}
-          docker build \
-            --platform linux/amd64 \
-            --build-arg VITE_API_URL=${{ env.STAGING_API_URL }} \
-            -t ${{ env.ECR_REGISTRY }}/saas-frontend:$IMAGE_TAG .
-          docker push ${{ env.ECR_REGISTRY }}/saas-frontend:$IMAGE_TAG
-
-      # 2. RUN DATABASE MIGRATIONS ON STAGING DB
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: './backend/package-lock.json'
 
       - name: Install AWS CLI
         run: |
@@ -80,25 +57,6 @@ jobs:
           else
             echo "AWS CLI is already installed"
           fi
-
-      - name: Run Database Migrations
-        working-directory: ./backend
-        run: |
-          # Fetch the staging database URL from SSM Parameter Store dynamically
-          DATABASE_URL=$(aws ssm get-parameter --name "/saas/staging/database/url" --with-decryption --query "Parameter.Value" --output text)
-
-          if [ -z "$DATABASE_URL" ]; then
-            echo "Error: Failed to fetch DATABASE_URL from SSM"
-            exit 1
-          fi
-
-          export DATABASE_URL=$DATABASE_URL
-
-          # Debug: Show the hostname being used (masking password)
-          echo "Connecting to: $(echo $DATABASE_URL | sed 's/:.*@/:****@/')"
-
-          npm ci
-          npm run migrate
 
       - name: Install Kubectl and Kustomize
         run: |
@@ -115,19 +73,49 @@ jobs:
             sudo mv kustomize /usr/local/bin/
           fi
 
+      # 1. BUILD BACKEND & FRONTEND WITH COMMIT SHA TAG
+      - name: Build and Push Backend Image
+        working-directory: ./backend
+        run: |
+          IMAGE_TAG=staging-${{ github.sha }}
+          docker build --platform linux/amd64 -t ${{ env.ECR_REGISTRY }}/saas-staging-backend:$IMAGE_TAG .
+          docker push ${{ env.ECR_REGISTRY }}/saas-staging-backend:$IMAGE_TAG
+
+      - name: Build and Push Frontend Image
+        working-directory: ./frontend
+        run: |
+          IMAGE_TAG=staging-${{ github.sha }}
+          docker build \
+            --platform linux/amd64 \
+            --build-arg VITE_API_URL=${{ env.STAGING_API_URL }} \
+            -t ${{ env.ECR_REGISTRY }}/saas-staging-frontend:$IMAGE_TAG .
+          docker push ${{ env.ECR_REGISTRY }}/saas-staging-frontend:$IMAGE_TAG
+
+      # 2. RUN DATABASE MIGRATIONS ON STAGING DB
+      - name: Run Database Migrations
+        working-directory: ./kubernetes/overlays/staging
+        run: |
+          # Connect to the staging cluster
+          aws eks update-kubeconfig --name saas-staging-cluster --region us-east-1
+
+          # Update the kustomization.yaml to point to the newly built image tags!
+          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-staging-backend:staging-${{ github.sha }}
+          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-staging-frontend:staging-${{ github.sha }}
+
+          # Delete old job if it exists
+          kubectl delete job saas-db-migrate -n staging --ignore-not-found
+
+          # Apply manifests and wait for the migration job to finish
+          kubectl apply -k .
+          kubectl wait --for=condition=complete job/saas-db-migrate -n staging --timeout=300s
+
       # 3. DEPLOY TO KUBERNETES USING KUSTOMIZE
       - name: Deploy to Staging Cluster
         working-directory: ./kubernetes/overlays/staging
         run: |
-          # Connect to the staging cluster (Ensure cluster name matches eks.tf)
-          aws eks update-kubeconfig --name saas-staging-cluster --region us-east-1
-
-          # Update the kustomization.yaml to point to the newly built image tags!
-          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend:staging-${{ github.sha }}
-          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend:staging-${{ github.sha }}
-
-          # Apply the manifests into the staging namespace
-          kubectl kustomize . | kubectl apply -n staging --validate=false -f -
+          # The apply happened in the migration step, but we run it again
+          # here just to be sure and to perform the final verification.
+          kubectl apply -k . --validate=false -n staging
 
           # Wait for the rollout to complete
           kubectl rollout status deployment/saas-backend -n staging --timeout=120s

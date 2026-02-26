@@ -45,7 +45,7 @@ module "eks" {
       }
     }
     github_actions = {
-      principal_arn     = "arn:aws:iam::569758639273:role/saas-github-actions-deploy-role"
+      principal_arn     = aws_iam_role.github_actions_ecr_deploy.arn
       policy_associations = {
         admin = {
           policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
@@ -94,7 +94,7 @@ resource "aws_iam_policy" "eks_ssm_secrets" {
           "ssm:GetParameter"
         ]
         Effect   = "Allow"
-        Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/saas/${var.environment}/*"
+        Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/*"
       }
     ]
   })
@@ -113,4 +113,16 @@ module "load_balancer_controller_irsa_role" {
       namespace_service_accounts = ["kube-system:aws-load-balancer-controller"]
     }
   }
+}
+
+output "eks_cluster_name" {
+  value = module.eks.cluster_name
+}
+
+output "eks_cluster_endpoint" {
+  value = module.eks.cluster_endpoint
+}
+
+output "eks_cluster_certificate_authority_data" {
+  value = module.eks.cluster_certificate_authority_data
 }
