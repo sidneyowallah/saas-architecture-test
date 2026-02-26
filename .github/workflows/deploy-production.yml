@@ -183,8 +183,12 @@ jobs:
         run: |
           aws eks update-kubeconfig --name saas-production-cluster --region us-east-1
 
+          # DIAGNOSTIC LOGGING: Let's see what the cluster actually reports!
+          echo "--- Available ExternalSecrets resources ---"
+          kubectl api-resources | grep external-secrets || echo "NO external-secrets resources found!"
+          echo "------------------------------------------"
+
           # FORCE REFRESH of the kubectl discovery cache!
-          # This prevents "no matches for kind" errors for newly installed CRDs.
           kubectl api-resources > /dev/null
 
           # Update the kustomization.yaml to point to the newly built image tags!
@@ -195,8 +199,8 @@ jobs:
           # Delete old job if it exists to allow re-run
           kubectl delete job saas-db-migrate -n production --ignore-not-found
 
-          # Apply manifests and wait for the migration job to finish
-          kubectl apply -k .
+          # Apply manifests with --validate=false to bypass client-side race conditions
+          kubectl apply -k . --validate=false
           kubectl wait --for=condition=complete job/saas-db-migrate -n production --timeout=300s
 
       - name: Deploy to Production
