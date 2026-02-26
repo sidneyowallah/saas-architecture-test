@@ -100,8 +100,9 @@ jobs:
           # MANUAL CRD INSTALLATION:
           # The Helm chart seems to have failed to install the ExternalSecret CRD specifically.
           # We force install the full official CRD bundle to ensure all types are available.
+          # We use --server-side to bypass the 256KB annotation limit for large CRDs.
           echo "Installing External Secrets CRD bundle..."
-          kubectl apply -f https://raw.githubusercontent.com/external-secrets/external-secrets/main/deploy/crds/bundle.yaml
+          kubectl apply -f https://raw.githubusercontent.com/external-secrets/external-secrets/main/deploy/crds/bundle.yaml --server-side --force-conflicts
 
           # Update the kustomization.yaml to point to the newly built image tags!
           kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-staging-backend:staging-${{ github.sha }}
