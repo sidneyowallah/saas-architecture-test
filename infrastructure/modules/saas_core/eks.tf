@@ -94,7 +94,7 @@ resource "aws_iam_policy" "eks_ssm_secrets" {
           "ssm:GetParameter"
         ]
         Effect   = "Allow"
-        Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/saas/${var.environment}/*"
+        Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/*"
       }
     ]
   })

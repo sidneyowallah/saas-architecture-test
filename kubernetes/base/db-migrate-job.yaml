@@ -7,8 +7,8 @@ spec:
     spec:
       containers:
         - name: migrate
-          image: 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend:latest
-          command: ['npm', 'run', 'migrate']
+          image: 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-backend:371b5bcc9e6ac4a2b7d7cb0b217f277f5007fe84
+          command: ['node', 'dist/migrate.js']
           env:
             - name: DATABASE_URL
               valueFrom:
