@@ -201,10 +201,27 @@ jobs:
           # Apply manifests with --validate=false to bypass potential discovery cache lag
           kubectl apply -k . --validate=false
 
-          # WAIT for ExternalSecrets to sync from AWS before proceeding to job check
+          # WAIT for ExternalSecrets to sync from AWS with diagnostic fallback
           echo "Waiting for secrets to sync from AWS..."
-          kubectl wait --for=condition=Ready externalsecret/saas-auth-sync -n production --timeout=60s
-          kubectl wait --for=condition=Ready externalsecret/saas-db-sync -n production --timeout=60s
+          if ! kubectl wait --for=condition=Ready externalsecret/saas-auth-sync -n production --timeout=120s; then
+            echo "❌ ERROR: Timeout waiting for saas-auth-sync"
+            echo "--- ExternalSecret Status ---"
+            kubectl get externalsecret saas-auth-sync -n production -o yaml
+            echo "--- ExternalSecret Events ---"
+            kubectl get events -n production --field-selector involvedObject.name=saas-auth-sync
+            echo "--- Operator Logs ---"
+            kubectl logs -l app.kubernetes.io/name=external-secrets -n external-secrets --tail=50
+            exit 1
+          fi
+
+          if ! kubectl wait --for=condition=Ready externalsecret/saas-db-sync -n production --timeout=120s; then
+            echo "❌ ERROR: Timeout waiting for saas-db-sync"
+            echo "--- ExternalSecret Status ---"
+            kubectl get externalsecret saas-db-sync -n production -o yaml
+            echo "--- ExternalSecret Events ---"
+            kubectl get events -n production --field-selector involvedObject.name=saas-db-sync
+            exit 1
+          fi
 
           # Wait for the migration job to finish
           kubectl wait --for=condition=complete job/saas-db-migrate -n production --timeout=300s
