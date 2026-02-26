@@ -97,13 +97,11 @@ jobs:
         run: |
           aws eks update-kubeconfig --name saas-staging-cluster --region us-east-1
 
-          # DIAGNOSTIC LOGGING: Let's see what the cluster actually reports!
-          echo "--- Available ExternalSecrets resources ---"
-          kubectl api-resources | grep external-secrets || echo "NO external-secrets resources found!"
-          echo "------------------------------------------"
-
-          # FORCE REFRESH of the kubectl discovery cache!
-          kubectl api-resources > /dev/null
+          # MANUAL CRD INSTALLATION:
+          # The Helm chart seems to have failed to install the ExternalSecret CRD specifically.
+          # We force install the full official CRD bundle to ensure all types are available.
+          echo "Installing External Secrets CRD bundle..."
+          kubectl apply -f https://raw.githubusercontent.com/external-secrets/external-secrets/main/deploy/crds/bundle.yaml
 
           # Update the kustomization.yaml to point to the newly built image tags!
           kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-staging-backend:staging-${{ github.sha }}
@@ -112,7 +110,7 @@ jobs:
           # Delete old job if it exists
           kubectl delete job saas-db-migrate -n staging --ignore-not-found
 
-          # Apply manifests with --validate=false to bypass client-side race conditions
+          # Apply manifests with --validate=false to bypass potential discovery cache lag
           kubectl apply -k . --validate=false
           kubectl wait --for=condition=complete job/saas-db-migrate -n staging --timeout=300s
 
