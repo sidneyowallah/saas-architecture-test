@@ -147,22 +147,43 @@ jobs:
             exit 1
           fi
 
+          # PRE-FLIGHT: Check that we can reach the RDS endpoint before wasting job retries.
+          # This runner is self-hosted inside the EKS cluster, so this test validates
+          # the SAME network path that the migration pod will use.
+          echo "--- Pre-flight: Checking RDS connectivity from runner ---"
+          DB_URL=$(kubectl get secret saas-db-secret -n staging -o jsonpath='{.data.database_url}' | base64 -d)
+          DB_HOST=$(echo "$DB_URL" | sed -E 's|postgres://[^@]+@([^:/]+).*|\1|')
+          DB_PORT=$(echo "$DB_URL" | sed -E 's|postgres://[^@]+@[^:]+:([0-9]+).*|\1|')
+          DB_PORT=${DB_PORT:-5432}
+          echo "RDS target → Host: ${DB_HOST}, Port: ${DB_PORT}"
+          # Use bash's built-in /dev/tcp — works everywhere, no nc needed.
+          if timeout 10 bash -c "echo >/dev/tcp/${DB_HOST}/${DB_PORT}" 2>&1; then
+            echo "✅ TCP connection to ${DB_HOST}:${DB_PORT} succeeded"
+          else
+            echo "❌ FATAL: Cannot reach RDS at ${DB_HOST}:${DB_PORT}"
+            echo "This means the security group or routing between EKS and RDS is broken."
+            echo "Check: aws ec2 describe-security-groups for the RDS instance."
+            exit 1
+          fi
+
+
           # Wait for the migration job to finish with diagnostic fallback
           echo "Waiting for database migration job to complete..."
           if ! kubectl wait --for=condition=complete job/saas-db-migrate -n staging --timeout=300s; then
             echo "❌ ERROR: Timeout waiting for saas-db-migrate job"
             echo "--- Job Status ---"
             kubectl get job saas-db-migrate -n staging -o yaml
-            echo "--- Job Logs (current container) ---"
-            kubectl logs job/saas-db-migrate -n staging --tail=100 || true
-            echo "--- Job Logs (previous crashed container) ---"
-            kubectl logs job/saas-db-migrate -n staging --previous --tail=100 || true
-            echo "--- Job Pod Events ---"
-            # Attempt to get events for the first pod associated with the job
-            JOB_POD=$(kubectl get pods -l job-name=saas-db-migrate -n staging -o jsonpath='{.items[0].metadata.name}' --ignore-not-found)
-            if [ -n "$JOB_POD" ]; then
-              kubectl get events -n staging --field-selector involvedObject.name=$JOB_POD
-            fi
+            echo "--- Job Pod Listing ---"
+            kubectl get pods -l job-name=saas-db-migrate -n staging -o wide
+            # Get logs by pod name — kubectl logs job/<name> fails for terminated pods
+            for POD in $(kubectl get pods -l job-name=saas-db-migrate -n staging -o jsonpath='{.items[*].metadata.name}'); do
+              echo "--- Logs for pod: ${POD} ---"
+              kubectl logs "${POD}" -n staging -c migrate --tail=200 2>&1 || true
+              echo "--- Previous container logs for pod: ${POD} ---"
+              kubectl logs "${POD}" -n staging -c migrate --previous --tail=200 2>&1 || true
+              echo "--- Pod description (exit code + termination message): ---"
+              kubectl describe pod "${POD}" -n staging 2>&1 || true
+            done
             exit 1
           fi
 
