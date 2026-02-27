@@ -234,8 +234,21 @@ jobs:
             exit 1
           fi
 
-          # Wait for the migration job to finish
-          kubectl wait --for=condition=complete job/saas-db-migrate -n production --timeout=300s
+          # Wait for the migration job to finish with diagnostic fallback
+          echo "Waiting for database migration job to complete..."
+          if ! kubectl wait --for=condition=complete job/saas-db-migrate -n production --timeout=300s; then
+            echo "❌ ERROR: Timeout waiting for saas-db-migrate job"
+            echo "--- Job Status ---"
+            kubectl get job saas-db-migrate -n production -o yaml
+            echo "--- Job Logs ---"
+            kubectl logs job/saas-db-migrate -n production --tail=100
+            echo "--- Job Pod Events ---"
+            JOB_POD=$(kubectl get pods -l job-name=saas-db-migrate -n production -o jsonpath='{.items[0].metadata.name}' --ignore-not-found)
+            if [ -n "$JOB_POD" ]; then
+              kubectl get events -n production --field-selector involvedObject.name=$JOB_POD
+            fi
+            exit 1
+          fi
 
       - name: Deploy to Production
         working-directory: ./kubernetes/overlays/production

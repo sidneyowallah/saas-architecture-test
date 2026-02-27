@@ -147,8 +147,22 @@ jobs:
             exit 1
           fi
 
-          # Wait for the migration job to finish
-          kubectl wait --for=condition=complete job/saas-db-migrate -n staging --timeout=300s
+          # Wait for the migration job to finish with diagnostic fallback
+          echo "Waiting for database migration job to complete..."
+          if ! kubectl wait --for=condition=complete job/saas-db-migrate -n staging --timeout=300s; then
+            echo "❌ ERROR: Timeout waiting for saas-db-migrate job"
+            echo "--- Job Status ---"
+            kubectl get job saas-db-migrate -n staging -o yaml
+            echo "--- Job Logs ---"
+            kubectl logs job/saas-db-migrate -n staging --tail=100
+            echo "--- Job Pod Events ---"
+            # Attempt to get events for the first pod associated with the job
+            JOB_POD=$(kubectl get pods -l job-name=saas-db-migrate -n staging -o jsonpath='{.items[0].metadata.name}' --ignore-not-found)
+            if [ -n "$JOB_POD" ]; then
+              kubectl get events -n staging --field-selector involvedObject.name=$JOB_POD
+            fi
+            exit 1
+          fi
 
       # 3. DEPLOY TO KUBERNETES USING KUSTOMIZE
       - name: Deploy to Staging Cluster
