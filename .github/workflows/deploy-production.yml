@@ -41,9 +41,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: './backend/package-lock.json'
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "./backend/package-lock.json"
 
       - name: Install Dependencies
         run: npm ci
@@ -74,9 +74,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: './frontend/package-lock.json'
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "./frontend/package-lock.json"
 
       - name: Install Dependencies
         run: npm ci
@@ -108,9 +108,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: './backend/package-lock.json'
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "./backend/package-lock.json"
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -135,25 +135,20 @@ jobs:
             echo "AWS CLI is already installed"
           fi
 
-      # 4. DATABASE MIGRATIONS: Run safely inside the VPC before deploying new code
-      - name: Run Database Migrations
-        working-directory: ./backend
+      - name: Install Kubectl and Kustomize
         run: |
-          # Fetch the production database URL from SSM Parameter Store dynamically
-          DATABASE_URL=$(aws ssm get-parameter --name "/saas/production/database/url" --with-decryption --query "Parameter.Value" --output text)
-
-          if [ -z "$DATABASE_URL" ]; then
-            echo "Error: Failed to fetch DATABASE_URL from SSM"
-            exit 1
+          if ! command -v kubectl &> /dev/null; then
+            echo "Kubectl not found, installing..."
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+            rm kubectl
           fi
 
-          export DATABASE_URL=$DATABASE_URL
-
-          # Debug: Show the hostname being used (masking password)
-          echo "Connecting to: $(echo $DATABASE_URL | sed 's/:.*@/:****@/')"
-
-          npm ci
-          npm run migrate
+          if ! command -v kustomize &> /dev/null; then
+            echo "Kustomize not found, installing..."
+            curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+            sudo mv kustomize /usr/local/bin/
+          fi
 
       - name: Build and Push Backend Image
         working-directory: ./backend
@@ -182,32 +177,84 @@ jobs:
             
           docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
 
-      - name: Install Kubectl and Kustomize
-        run: |
-          if ! command -v kubectl &> /dev/null; then
-            echo "Kubectl not found, installing..."
-            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-            sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-            rm kubectl
-          fi
-
-          if ! command -v kustomize &> /dev/null; then
-            echo "Kustomize not found, installing..."
-            curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-            sudo mv kustomize /usr/local/bin/
-          fi
-
-      - name: Deploy to Production (on Staging Cluster)
+      # 6. DATABASE MIGRATIONS: Run safely inside the VPC using a Kubernetes Job
+      - name: Run Database Migrations
         working-directory: ./kubernetes/overlays/production
         run: |
-          # 1. Update kubeconfig to connect to the production cluster
           aws eks update-kubeconfig --name saas-production-cluster --region us-east-1
 
-          # 2. Update the kustomization.yaml to point to the newly built image tags!
-          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-backend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-backend:${{ github.sha }}
-          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-frontend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-frontend:${{ github.sha }}
+          # MANUAL CRD INSTALLATION:
+          # The Helm chart seems to have failed to install the ExternalSecret CRD specifically.
+          # We force install the full official CRD bundle to ensure all types are available.
+          # We use --server-side to bypass the 256KB annotation limit for large CRDs.
+          echo "Installing External Secrets CRD bundle..."
+          kubectl apply -f https://raw.githubusercontent.com/external-secrets/external-secrets/main/deploy/crds/bundle.yaml --server-side --force-conflicts
 
-          # 3. Apply the manifests using Kustomize (This handles all namespaces and overlays)
+          # Update the kustomization.yaml to point to the newly built image tags!
+          # This ensures the migration job uses the latest backend image.
+          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-backend:${{ github.sha }}
+          kustomize edit set image 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-frontend=569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-production-frontend:${{ github.sha }}
+
+          # Delete old job if it exists to allow re-run
+          kubectl delete job saas-db-migrate -n production --ignore-not-found
+
+          # FIX: Force IRSA Annotation and Operator Restart
+          # The logs show the ServiceAccount is missing the role association.
+          echo "Applying IRSA fix to external-secrets ServiceAccount..."
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          kubectl annotate serviceaccount external-secrets -n external-secrets \
+            eks.amazonaws.com/role-arn=arn:aws:iam::${ACCOUNT_ID}:role/saas-production-eks-ssm-secrets-reader --overwrite
+
+          echo "Restarting External Secrets Operator to pick up IRSA credentials..."
+          kubectl rollout restart deployment external-secrets -n external-secrets
+          kubectl rollout status deployment external-secrets -n external-secrets --timeout=60s
+
+          # Apply manifests with --validate=false to bypass potential discovery cache lag
+          kubectl apply -k . --validate=false
+
+          # WAIT for ExternalSecrets to sync from AWS with diagnostic fallback
+          echo "Waiting for secrets to sync from AWS..."
+          if ! kubectl wait --for=condition=Ready externalsecret/saas-auth-sync -n production --timeout=120s; then
+            echo "❌ ERROR: Timeout waiting for saas-auth-sync"
+            echo "--- ExternalSecret Status ---"
+            kubectl get externalsecret saas-auth-sync -n production -o yaml
+            echo "--- ExternalSecret Events ---"
+            kubectl get events -n production --field-selector involvedObject.name=saas-auth-sync
+            echo "--- Operator Logs ---"
+            kubectl logs -l app.kubernetes.io/name=external-secrets -n external-secrets --tail=50
+            exit 1
+          fi
+
+          if ! kubectl wait --for=condition=Ready externalsecret/saas-db-sync -n production --timeout=120s; then
+            echo "❌ ERROR: Timeout waiting for saas-db-sync"
+            echo "--- ExternalSecret Status ---"
+            kubectl get externalsecret saas-db-sync -n production -o yaml
+            echo "--- ExternalSecret Events ---"
+            kubectl get events -n production --field-selector involvedObject.name=saas-db-sync
+            exit 1
+          fi
+
+          # Wait for the migration job to finish with diagnostic fallback
+          echo "Waiting for database migration job to complete..."
+          if ! kubectl wait --for=condition=complete job/saas-db-migrate -n production --timeout=300s; then
+            echo "❌ ERROR: Timeout waiting for saas-db-migrate job"
+            echo "--- Job Status ---"
+            kubectl get job saas-db-migrate -n production -o yaml
+            echo "--- Job Logs ---"
+            kubectl logs job/saas-db-migrate -n production --tail=100
+            echo "--- Job Pod Events ---"
+            JOB_POD=$(kubectl get pods -l job-name=saas-db-migrate -n production -o jsonpath='{.items[0].metadata.name}' --ignore-not-found)
+            if [ -n "$JOB_POD" ]; then
+              kubectl get events -n production --field-selector involvedObject.name=$JOB_POD
+            fi
+            exit 1
+          fi
+
+      - name: Deploy to Production
+        working-directory: ./kubernetes/overlays/production
+        run: |
+          # The apply happened in the migration step, but we run it again
+          # here just to be sure and to perform the final verification.
           kubectl apply -k . --validate=false
 
           # 4. Wait for the rollout to complete in the production namespace
