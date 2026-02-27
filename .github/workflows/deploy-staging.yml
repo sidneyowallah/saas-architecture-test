@@ -167,22 +167,32 @@ jobs:
           fi
 
 
-          # Wait for the migration job to finish with diagnostic fallback
+          # Wait for the migration job to finish with diagnostic fallback.
+          # We check for EITHER complete (success) OR failed (BackoffLimitExceeded).
           echo "Waiting for database migration job to complete..."
           if ! kubectl wait --for=condition=complete job/saas-db-migrate -n staging --timeout=300s; then
-            echo "❌ ERROR: Timeout waiting for saas-db-migrate job"
+            echo "❌ ERROR: Migration job did not complete successfully"
             echo "--- Job Status ---"
             kubectl get job saas-db-migrate -n staging -o yaml
-            echo "--- Job Pod Listing ---"
-            kubectl get pods -l job-name=saas-db-migrate -n staging -o wide
-            # Get logs by pod name — kubectl logs job/<name> fails for terminated pods
-            for POD in $(kubectl get pods -l job-name=saas-db-migrate -n staging -o jsonpath='{.items[*].metadata.name}'); do
+            echo "--- Job Pod Listing (including terminated) ---"
+            kubectl get pods -l job-name=saas-db-migrate -n staging -o wide --show-all 2>&1 || \
+              kubectl get pods -l job-name=saas-db-migrate -n staging -o wide 2>&1 || true
+
+            # Read termination messages from pod status JSON.
+            # Kubernetes stores the last 4KB of /dev/termination-log in pod status,
+            # so these messages persist even after the container has exited/been GC'd.
+            echo "--- Termination Messages (from pod status, survives pod GC) ---"
+            kubectl get pods -l job-name=saas-db-migrate -n staging -o json 2>/dev/null \
+              | jq -r '.items[] | .metadata.name as $pod | .status.containerStatuses[]? | ($pod + " | exit=" + ((.lastState.terminated.exitCode // .state.terminated.exitCode // "?") | tostring) + " | reason=" + (.lastState.terminated.reason // .state.terminated.reason // "?") + "\nOutput:\n" + (.lastState.terminated.message // .state.terminated.message // "(no message)"))' \
+              2>&1 || echo "(jq not available or no terminated pods found)"
+
+
+            # If pods still exist, also try direct log access
+            for POD in $(kubectl get pods -l job-name=saas-db-migrate -n staging -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
               echo "--- Logs for pod: ${POD} ---"
               kubectl logs "${POD}" -n staging -c migrate --tail=200 2>&1 || true
               echo "--- Previous container logs for pod: ${POD} ---"
               kubectl logs "${POD}" -n staging -c migrate --previous --tail=200 2>&1 || true
-              echo "--- Pod description (exit code + termination message): ---"
-              kubectl describe pod "${POD}" -n staging 2>&1 || true
             done
             exit 1
           fi

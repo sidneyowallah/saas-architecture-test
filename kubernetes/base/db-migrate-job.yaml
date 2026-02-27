@@ -3,12 +3,21 @@ kind: Job
 metadata:
   name: saas-db-migrate
 spec:
+  # Keep the completed/failed job and its pods around for 10 minutes so we
+  # can inspect logs and termination messages before they are garbage collected.
+  ttlSecondsAfterFinished: 600
   template:
     spec:
       containers:
         - name: migrate
           image: 569758639273.dkr.ecr.us-east-1.amazonaws.com/saas-backend:latest
-          command: ['node', 'dist/migrate.js']
+          # Tee all output (stdout + stderr) to /dev/termination-log.
+          # Kubernetes reads this file into pod.status.containerStatuses[].lastState.terminated.message
+          # so the error is retrievable via kubectl get pod -o json even after the pod terminates.
+          command:
+            - sh
+            - -c
+            - node dist/migrate.js 2>&1 | tee /dev/termination-log; exit ${PIPESTATUS[0]}
           env:
             - name: DATABASE_URL
               valueFrom:
@@ -17,5 +26,7 @@ spec:
                   key: database_url
             - name: NODE_ENV
               value: production
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
       restartPolicy: OnFailure
   backoffLimit: 4
