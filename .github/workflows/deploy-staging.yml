@@ -153,8 +153,10 @@ jobs:
             echo "❌ ERROR: Timeout waiting for saas-db-migrate job"
             echo "--- Job Status ---"
             kubectl get job saas-db-migrate -n staging -o yaml
-            echo "--- Job Logs ---"
-            kubectl logs job/saas-db-migrate -n staging --tail=100
+            echo "--- Job Logs (current container) ---"
+            kubectl logs job/saas-db-migrate -n staging --tail=100 || true
+            echo "--- Job Logs (previous crashed container) ---"
+            kubectl logs job/saas-db-migrate -n staging --previous --tail=100 || true
             echo "--- Job Pod Events ---"
             # Attempt to get events for the first pod associated with the job
             JOB_POD=$(kubectl get pods -l job-name=saas-db-migrate -n staging -o jsonpath='{.items[0].metadata.name}' --ignore-not-found)
